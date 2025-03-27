@@ -1,0 +1,156 @@
+#!/usr/bin/env python3
+
+import argparse
+import json
+import os
+import subprocess
+import time
+import signal
+import sys
+import requests
+
+CONFIG_DIR = os.path.expanduser("~/.config/hostddns")
+URLS_FILE = os.path.join(CONFIG_DIR, "urls.json")
+PID_FILE = "/var/run/hostddns.pid"
+
+def ensure_config():
+    os.makedirs(CONFIG_DIR, exist_ok=True)
+    if not os.path.exists(URLS_FILE):
+        with open(URLS_FILE, 'w') as f:
+            json.dump([], f)
+
+def load_urls():
+    with open(URLS_FILE, 'r') as f:
+        return json.load(f)
+
+def save_urls(urls):
+    with open(URLS_FILE, 'w') as f:
+        json.dump(urls, f, indent=2)
+
+def add_url():
+    url = input("Masukkan URL update DDNS: ").strip()
+    if not url.startswith("http"):
+        print("URL tidak valid.")
+        return
+    urls = load_urls()
+    urls.append(url)
+    save_urls(urls)
+    print("URL berhasil ditambahkan.")
+
+def list_urls():
+    urls = load_urls()
+    if not urls:
+        print("Tidak ada URL yang tersimpan.")
+        return
+    print("Daftar URL:")
+    for idx, url in enumerate(urls):
+        print(f"[{idx}] {url}")
+
+def remove_url(index):
+    urls = load_urls()
+    try:
+        removed = urls.pop(index)
+        save_urls(urls)
+        print(f"Berhasil menghapus: {removed}")
+    except IndexError:
+        print("Index tidak ditemukan.")
+
+def run_daemon():
+    while True:
+        urls = load_urls()
+        for url in urls:
+            try:
+                response = requests.get(url, timeout=10)
+                data = response.json()
+                message = data.get("message", "Tidak ada pesan.")
+                print(f"[{url}] ➜ {message}")
+            except Exception as e:
+                print(f"[{url}] ➜ Gagal update: {e}")
+        time.sleep(600)  # 10 menit
+
+def start_daemon():
+    if os.path.exists(PID_FILE):
+        print("Daemon sudah berjalan.")
+        return
+    pid = os.fork()
+    if pid > 0:
+        # Parent process
+        with open(PID_FILE, 'w') as f:
+            f.write(str(pid))
+        print(f"Daemon berjalan dengan PID {pid}")
+    else:
+        # Child process
+        sys.stdout = open(os.devnull, 'w')
+        sys.stderr = open(os.devnull, 'w')
+        run_daemon()
+
+def stop_daemon():
+    if not os.path.exists(PID_FILE):
+        print("Daemon tidak sedang berjalan.")
+        return
+    with open(PID_FILE, 'r') as f:
+        pid = int(f.read())
+    try:
+        os.kill(pid, signal.SIGTERM)
+        os.remove(PID_FILE)
+        print(f"Daemon dengan PID {pid} dihentikan.")
+    except ProcessLookupError:
+        print("Proses tidak ditemukan. Menghapus file PID.")
+        os.remove(PID_FILE)
+
+def restart_daemon():
+    stop_daemon()
+    time.sleep(1)
+    start_daemon()
+
+def status_daemon():
+    if not os.path.exists(PID_FILE):
+        print("Daemon tidak sedang berjalan.")
+        return
+
+    with open(PID_FILE, 'r') as f:
+        pid = int(f.read())
+
+    try:
+        os.kill(pid, 0)
+        print(f"Daemon aktif dengan PID {pid}.")
+    except ProcessLookupError:
+        print(f"PID {pid} tidak ditemukan. Mungkin daemon mati.")
+        os.remove(PID_FILE)
+
+def main():
+    ensure_config()
+    parser = argparse.ArgumentParser(description="hostddns CLI")
+    subparsers = parser.add_subparsers(dest="command")
+
+    subparsers.add_parser("add")
+    subparsers.add_parser("list")
+    rm = subparsers.add_parser("remove")
+    rm.add_argument("id", type=int, help="ID URL yang ingin dihapus")
+
+    subparsers.add_parser("start")
+    subparsers.add_parser("stop")
+    subparsers.add_parser("restart")
+    subparsers.add_parser("status")
+
+    args = parser.parse_args()
+
+    if args.command == "add":
+        add_url()
+    elif args.command == "list":
+        list_urls()
+    elif args.command == "remove":
+        remove_url(args.id)
+    elif args.command == "start":
+        start_daemon()
+    elif args.command == "stop":
+        stop_daemon()
+    elif args.command == "restart":
+        restart_daemon()
+    elif args.command == "status":
+        status_daemon()
+    else:
+        parser.print_help()
+
+if __name__ == "__main__":
+    main()
