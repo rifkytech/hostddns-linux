@@ -1,0 +1,11 @@
+#!/bin/bash
+
+echo "Menjalankan hostddns daemon setelah install..."
+
+if [ -x /usr/bin/hostddns ]; then
+    /usr/bin/hostddns start || true
+else
+    echo "File /usr/bin/hostddns tidak ditemukan."
+fi
+
+exit 0
