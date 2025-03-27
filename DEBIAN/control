@@ -1,0 +1,8 @@
+Package: hostddns
+Version: 1.0.0
+Section: utils
+Priority: optional
+Architecture: all
+Depends: python3, python3-crontab, python3-requests
+Maintainer: M RIFKI ABIMAYU <rifky@mexious.com>
+Description: CLI tool untuk update URL DDNS secara otomatis menggunakan daemon.
